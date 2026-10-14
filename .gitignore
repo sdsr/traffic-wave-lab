@@ -1,0 +1,10 @@
+# Local preview server output
+*.log
+
+# Local dependencies, credentials, and operating-system files
+node_modules/
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db

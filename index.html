@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>교통 파동 분석기 | Traffic Wave Lab</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header class="masthead">
+    <div><div class="eyebrow">TRAFFIC WAVE LAB <span>차량 추종 실험</span></div><h1>교통 파동 분석기<span class="period">.</span></h1><p>앞차의 작은 변화가 뒤차에 어떻게 전해지는지 계산합니다.</p></div>
+    <div class="header-actions"><span class="edition">연구용 프로토타입 · v1.1 · 3D</span><div><button id="export-config" class="quiet">설정 저장</button><button id="export-csv" class="outline">계산 결과 CSV</button></div></div>
+  </header>
+  <nav class="workspace-nav" aria-label="분석 모드"><div><button id="mode-simulation" aria-pressed="true">가상 실험</button><button id="mode-measured" aria-pressed="false">실측 데이터 비교</button></div><span id="source-label">가상 조건 · 실측 자료 없음</span></nav>
+  <section id="data-panel" class="data-panel" hidden aria-label="실측 데이터 입력">
+    <div><h2>같은 차로의 차량 궤적을 불러오세요.</h2><p>필수 열: <code>time_s, vehicle_id, position_m, speed_kmh</code><br>위치는 진행 방향으로 증가하는 앞범퍼 좌표(m), 시간은 공통 시계(s)입니다. 차량 길이는 아래 설정값을 공통 적용합니다.</p></div>
+    <div class="data-actions"><label class="file-button">CSV 불러오기<input type="file" id="file-input" accept=".csv,text/csv"></label><button id="template" class="outline">CSV 양식</button><button id="synthetic" class="quiet">합성 예제 사용</button><button id="clear-data" class="quiet" hidden>자료 해제</button></div>
+    <div id="data-status" class="data-status" role="status">아직 실측 자료가 없습니다. 합성 예제로 비교 기능을 먼저 시험할 수 있습니다.</div>
+    <div id="fit-row" class="fit-row" hidden><div><b id="fit-score">—</b><span id="data-summary"></span></div><button id="calibrate" class="outline">반응시간·시간간격 추정</button><span id="fit-progress" role="status"></span></div>
+    <p class="small">CSV 최대 30대·300초·12 MB, 차량마다 최소 3개 시점. 2초보다 긴 관측 공백은 허용하지 않습니다. 엑셀 자료는 CSV UTF-8로 저장해 주세요.</p>
+  </section>
+  <main class="layout">
+    <aside class="controls">
+      <div class="section-heading"><span class="section-no">01</span><h2>실험 조건</h2></div>
+      <div class="presets" aria-label="가상 실험 프리셋"><button id="preset-wave" aria-pressed="true">파동 증폭</button><button id="preset-stable" aria-pressed="false">파동 완화</button></div>
+      <div id="synthetic-controls">
+        <label class="field">선두차 주행 패턴<select id="mode"><option value="sine">반복 감속·가속</option><option value="pulse">한 차례 감속 후 회복</option></select></label>
+        <label class="range-field" for="count"><span>전체 차량 수<output id="count-value"></output></span><input id="count" type="range" min="3" max="30" step="1" value="24"></label>
+        <label class="range-field" for="baselineSpeed"><span>선두차 기준 속도<output id="baselineSpeed-value"></output></span><input id="baselineSpeed" type="range" min="30" max="90" step="5" value="65"></label>
+        <label class="range-field" for="amplitude"><span>속도 변화 폭<output id="amplitude-value"></output></span><input id="amplitude" type="range" min="0" max="25" step="1" value="10"></label>
+        <label class="range-field" for="period"><span>변화 주기<output id="period-value"></output></span><input id="period" type="range" min="12" max="60" step="2" value="28"></label>
+      </div>
+      <div class="control-divider"></div>
+      <label class="range-field" for="reactionTime"><span>운전자 반응시간 τ<output id="reactionTime-value"></output></span><input id="reactionTime" type="range" min="0" max="1.5" step="0.05" value="0.6"><small>주변 상태를 인지해 반응하기까지의 지연</small></label>
+      <label class="range-field" for="timeHeadway"><span>희망 시간간격 T<output id="timeHeadway-value"></output></span><input id="timeHeadway" type="range" min="0.7" max="2.5" step="0.05" value="1.35"><small>속도에 비례해 확보하려는 차간거리의 기준</small></label>
+      <details class="advanced"><summary>차량·수치계산 설정</summary><div class="advanced-fields">
+        <label class="field">가속 성향 a (m/s²)<input id="acceleration" type="number" min="0.3" max="3" step="0.1" value="1.1"></label>
+        <label class="field">편안한 감속 b (m/s²)<input id="comfortableBraking" type="number" min="0.5" max="4" step="0.1" value="2"></label>
+        <label class="field">자유 주행 희망속도 (km/h)<input id="desiredSpeed" type="number" min="100" max="160" step="5" value="120"></label>
+        <label class="field">정지 시 최소 간격 (m)<input id="minimumGap" type="number" min="0.5" max="5" step="0.5" value="2"></label>
+        <label class="field">차량 길이 (m)<input id="vehicleLength" type="number" min="3" max="8" step="0.1" value="4.5"></label>
+        <label class="field">계산 시간 (s)<input id="duration" type="number" min="30" max="300" step="10" value="180"></label>
+        <p class="small">계산 간격 0.05 s · 기록 간격 0.2 s<br>단일 차로 · 차로 변경 없음 · 동일 운전자 계수</p>
+      </div></details>
+      <button id="recalculate" class="primary apply">조건 적용·다시 계산</button>
+      <p id="condition-status" class="small" role="status">조건을 바꾸면 결과를 다시 계산합니다.</p>
+    </aside>
+    <div class="results">
+      <div id="error" class="error" role="alert" hidden></div>
+      <section class="road-section" id="road-section" aria-labelledby="road-title">
+        <div class="section-heading spread"><div><span class="section-no">02</span><h2 id="road-title">도로 위 차량</h2></div><span class="small">계산된 궤적을 3D로 재생</span></div>
+        <div class="road-readout"><span id="road-state">계산 준비</span><label>관찰 차량<select id="selected-car" aria-label="관찰할 차량"></select></label></div>
+        <div class="scene-toolbar" aria-label="3D 시점 설정"><div class="camera-views"><button id="cam-follow" aria-pressed="true">차량 따라가기</button><button id="cam-roadside" aria-pressed="false">도로 옆 고정</button><button id="cam-overview" aria-pressed="false">전체 대열</button></div><div class="camera-actions"><button id="cam-zoom-in" aria-label="3D 화면 확대">＋</button><button id="cam-zoom-out" aria-label="3D 화면 축소">−</button><button id="cam-reset">시점 초기화</button><button id="scene-fullscreen">크게 보기</button></div></div>
+        <div id="scene-shell" class="scene-shell">
+          <canvas id="road-3d" aria-label="계산된 위치와 속도로 도로를 달리는 3D 자동차. 드래그로 회전하고 휠로 확대합니다. 관찰 차량과 아래 재생 버튼으로도 조작할 수 있습니다." role="img"></canvas>
+          <div class="scene-stamp"><span class="scene-dot"></span><span>계산 궤적 · 실제 축척</span></div>
+          <div class="scene-hint">드래그 회전 · 휠 확대 · 차량 클릭으로 선택</div>
+          <div id="scene-fallback" class="scene-fallback" role="status" hidden>이 브라우저에서 3D를 시작하지 못했습니다. 아래 2D 대열과 그래프는 계속 사용할 수 있습니다.</div>
+        </div>
+        <p id="scene-status" class="scene-status" role="status">관찰 차량을 따라갑니다. 빨간 제동등은 계산상 감속을 표시합니다.</p>
+        <canvas id="road" role="img" aria-label="선두차를 기준으로 차량의 간격 변화를 보여주는 차량 대열"></canvas>
+        <div class="road-caption"><span>차량 기호 확대 · 앞범퍼 위치는 공통 축척</span><span id="road-scale"></span></div>
+        <div class="playback"><button id="play" class="primary" aria-label="시뮬레이션 재생">재생</button><button id="restart" class="quiet">처음</button><output id="time-label">0.0 / 180 s</output><input id="timeline" type="range" min="0" max="180" step="0.05" value="0" aria-label="시뮬레이션 시간"><select id="playback-rate" aria-label="재생 배속"><option value="1">1배속</option><option value="2" selected>2배속</option><option value="4">4배속</option><option value="8">8배속</option></select></div>
+      </section>
+      <p class="model-context">가상 실험의 규칙적인 물결은 일정한 선두 입력과 동일한 운전자 계수에서 나온 결과입니다. 실제 도로의 움직임과 정확히 일치한다는 뜻은 아닙니다.</p>
+      <section class="metrics" aria-label="전체 계산구간 지표">
+        <div><span>끝차 / 선두 속도 변동비</span><strong id="amplification">—</strong><small id="amplification-note">속도 최댓값−최솟값의 비</small></div>
+        <div><span>전체 최소 차간거리</span><strong id="min-gap">—</strong><small>앞차 뒤범퍼와 뒤차 앞범퍼 사이</small></div>
+        <div><span>계산 구간</span><strong id="run-duration">—</strong><small id="run-status">충돌 검출 시 계산 중단</small></div>
+      </section>
+      <section class="heat-section" aria-labelledby="heat-title"><div class="section-heading spread"><div><span class="section-no">03</span><h2 id="heat-title">파동이 전해지는 모습</h2></div><div class="color-key"><span id="heat-min">0</span><i></i><span id="heat-max">100 km/h</span></div></div><canvas id="heatmap" role="img" aria-label="가로축 시간 초, 세로축 차량 번호, 색은 시뮬레이션 속도 킬로미터 매 시"></canvas><p class="chart-caption">가로축은 시간, 세로축은 앞에서부터의 차량 순서입니다. 느린 구간이 뒤 차량으로 전해지면 띠가 비스듬히 이어집니다.</p></section>
+      <div class="chart-grid">
+        <section><div class="chart-title"><h2>속도 이력</h2><span>km/h</span></div><canvas id="speed-chart" role="img" aria-label="시간에 따른 선두, 관찰 차량, 끝차 속도 그래프"></canvas></section>
+        <section><div class="chart-title"><h2>차간거리 이력</h2><span>m</span></div><canvas id="gap-chart" role="img" aria-label="시간에 따른 관찰 차량과 끝차의 범퍼 사이 간격 그래프"></canvas></section>
+      </div>
+      <div class="legend"><span><i class="lead"></i>선두</span><span><i class="selected"></i><span id="selected-series-label">관찰 차량</span></span><span id="tail-legend"><i class="tail"></i>끝차</span><span id="observed-legend" hidden><i class="observed"></i>점선: 관측 자료</span><span class="legend-note">세로선: 현재 재생 시점 · 그래프 클릭으로 이동</span></div>
+      <details class="values"><summary>차량별 수치 보기</summary><div class="table-scroll"><table><thead><tr><th>차량</th><th>현재 속도 (km/h)</th><th>현재 간격 (m)</th><th>속도 변동폭 (km/h)</th></tr></thead><tbody id="vehicle-values"></tbody></table></div></details>
+    </div>
+  </main>
+  <section class="method"><details><summary><span>모델·지표·실측 분석 방법</span><span class="small">가정과 한계 확인</span></summary><div class="method-grid">
+    <div><h3>지연을 추가한 차량 추종 모델</h3><p>IDM(Intelligent Driver Model)의 가속도 식에 명시적인 반응 지연 τ를 추가했습니다. τ=0은 지연 없는 IDM입니다. 표준 IDM에 원래 포함된 반응시간으로 해석하지 않습니다.</p><div class="equation">dv/dt = a [1 − (v/v₀)⁴ − (s*/s)²]<br>s* = s₀ + max(0, vT + vΔv / 2√(ab))<br>입력 v, Δv, s는 t−τ에서 평가</div><p>차간거리 s=x앞−x뒤−L. 속도는 내부적으로 m/s, 화면에서는 km/h입니다. 초기 가상 대열은 기준 속도의 평형 간격에서 출발합니다.</p></div>
+    <div><h3>지표를 읽는 법</h3><p>속도 변동비는 전체 계산구간의 (끝차 최대속도−최소속도)/(선두 최대속도−최소속도)입니다. 1보다 크면 이 실험 구간에서 끝차의 변동폭이 더 큽니다. 유한 시간의 과도응답을 포함하므로 엄밀한 선형 안정성 판정은 아닙니다. 선두의 변화가 없으면 비율은 정의하지 않습니다.</p><p>지표는 0.05초 계산점, 그래프와 내보내기는 0.2초 기록점 기준입니다. 단일 차로, 동일 차장·운전자 계수, 최대 감속 9 m/s²를 가정합니다. 충돌이 검출되면 해당 적분 구간 안의 최초 접촉점을 찾아 중단합니다.</p></div>
+    <div><h3>실측 자료와 계수 추정</h3><p>각 차량의 공통 관측 구간을 0.2초 간격으로 선형 보간합니다. 선두 궤적을 입력하고 뒤차를 관측 초기값에서 시뮬레이션합니다. 초깃값 이전의 지연 이력은 일정 속도로 연장합니다.</p><p>계수 추정은 τ와 T의 제한된 격자 탐색입니다. 뒤차의 속도 RMSE를 줄이는 조합을 찾으며, 같은 자료에 대한 적합 오차를 표시합니다. 별도 검증 자료, 관측 잡음 처리, 계수 불확실성 추정은 포함하지 않습니다. 위치와 속도의 불일치는 결과에 영향을 줍니다.</p></div>
+  </div><p class="sources">모델 근거: <a href="https://mtreiber.de/MicroApplet/IDM.html" target="_blank" rel="noreferrer">Treiber · IDM 식과 수치 적분</a> · <a href="https://arxiv.org/abs/cond-mat/0002177" target="_blank" rel="noreferrer">Treiber, Hennecke & Helbing (2000)</a>. 실제 차량 대열의 변동 관측: <a href="https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0094351" target="_blank" rel="noreferrer">Jiang 외 (2014), 25대 차량 실험</a>. 실측 보정 전에는 현장 예측값으로 해석하지 않습니다.</p></details></section>
+  <footer><span>TRAFFIC WAVE LAB</span><span>모든 계산과 CSV 처리는 이 브라우저 안에서 수행됩니다.</span></footer>
+</div>
+<script src="vendor/three.min.js"></script><script src="scene3d.js"></script><script src="model.js"></script><script src="data.js"></script><script src="app.js"></script>
+</body>
+</html>
